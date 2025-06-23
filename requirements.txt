@@ -4,3 +4,4 @@ tqdm
 Pillow
 opencv-python
 matplotlib
+pyqt5

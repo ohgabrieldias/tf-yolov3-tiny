@@ -1,85 +1,55 @@
 import tensorflow as tf
 import numpy as np
+from config import anchors_tf
 
-def conditional_iou(boxes1, boxes2, box_format='corner'):
+
+def yolo_iou(box_wh, anchors):
     """
-    Calcula o IoU entre dois conjuntos de caixas delimitadoras com um formato especificado.
+    Calcula a IoU entre uma bounding box (apenas largura e altura) e um conjunto de âncoras.
     
-    Args:
-        boxes1: Tensor de shape [N, 4] contendo N caixas delimitadoras.
-        boxes2: Tensor de shape [M, 4] contendo M caixas delimitadoras.
-        box_format: 'mid' para (x_center, y_center, width, height) ou 'corner' para (x1, y1, x2, y2).
-    
-    Returns:
-        Tensor de shape [N, M] com os valores de IoU entre cada par de caixas.
+    Parâmetros:
+    - box_wh: tensor/lista com [w, h] da bounding box (valores normalizados entre 0 e 1)
+    - anchors: tensor (3, 2), cada linha é uma âncora [w, h], já normalizada entre 0 e 1
+
+    Retorna:
+    - ious: vetor de IoUs com cada âncora
     """
-    # Converter para formato 'corner' (x1, y1, x2, y2) se estiver em 'mid'
-    if box_format == 'mid':
-        boxes1 = tf.concat([
-            boxes1[..., :2] - boxes1[..., 2:] / 2.0,  # x1, y1
-            boxes1[..., :2] + boxes1[..., 2:] / 2.0    # x2, y2
-        ], axis=-1)
-        
-        boxes2 = tf.concat([
-            boxes2[..., :2] - boxes2[..., 2:] / 2.0,  # x1, y1
-            boxes2[..., :2] + boxes2[..., 2:] / 2.0    # x2, y2
-        ], axis=-1)
-    
-    # Broadcasting para comparar todos os pares (N, M)
-    boxes1 = tf.expand_dims(boxes1, axis=1)  # [N, 1, 4]
-    boxes2 = tf.expand_dims(boxes2, axis=0)  # [1, M, 4]
-    
+    # Converter entrada para tensores TensorFlow
+    box_wh = tf.convert_to_tensor(box_wh, dtype=tf.float32)  # shape (2,)
+    anchors = tf.convert_to_tensor(anchors, dtype=tf.float32)  # shape (3, 2)
+
     # Calcular interseção
-    x1 = tf.maximum(boxes1[..., 0], boxes2[..., 0])
-    y1 = tf.maximum(boxes1[..., 1], boxes2[..., 1])
-    x2 = tf.minimum(boxes1[..., 2], boxes2[..., 2])
-    y2 = tf.minimum(boxes1[..., 3], boxes2[..., 3])
-    
-    intersection = tf.maximum(0.0, x2 - x1) * tf.maximum(0.0, y2 - y1)
-    
-    # Calcular áreas individuais
-    area1 = (boxes1[..., 2] - boxes1[..., 0]) * (boxes1[..., 3] - boxes1[..., 1])
-    area2 = (boxes2[..., 2] - boxes2[..., 0]) * (boxes2[..., 3] - boxes2[..., 1])
-    
-    # IoU = Interseção / União
-    union = area1 + area2 - intersection
-    iou = tf.math.divide_no_nan(intersection, union)  # Evita divisão por zero
-    
-    return iou
+    inter_wh = tf.minimum(box_wh, anchors)  # shape (3, 2)
+    inter_area = inter_wh[..., 0] * inter_wh[..., 1]  # shape (3,)
 
-def yolo_iou(bb, anchors):
+    # Calcular área da caixa e das âncoras
+    box_area = box_wh[0] * box_wh[1]  # escalar
+    anchor_area = anchors[..., 0] * anchors[..., 1]  # shape (3,)
+
+    # Calcular união
+    union_area = box_area + anchor_area - inter_area  # shape (3,)
+
+    # IoU = interseção / união
+    ious = inter_area / (union_area + 1e-6)  # shape (3,)
+    return ious
+
+def test_yolo_iou(bb):
     """
-    Versão mais segura que aceita tanto numpy arrays quanto tensores TF
+    Função de teste para verificar o cálculo de IoU com âncoras.
     """
-    try:
-        # Converter para numpy primeiro
-        bb_np = np.array(bb, dtype=np.float32)
-        anchors_np = np.array(anchors, dtype=np.float32)
-        
-        # Verificar shape
-        if bb_np.shape != (5,):
-            print(f"BB shape inválido: {bb_np.shape}")
-            return np.zeros((3, 3), dtype=np.float32)
-            
-        # Extrair w e h (índices 3 e 4)
-        bb_w, bb_h = bb_np[3], bb_np[4]
-        
-        # Reformatar âncoras
-        flat_anchors = anchors_np.reshape(-1, 2)
-        
-        # Cálculo do IoU
-        bb_area = bb_w * bb_h
-        anchors_areas = flat_anchors[:, 0] * flat_anchors[:, 1]
-        
-        inter_w = np.minimum(bb_w, flat_anchors[:, 0])
-        inter_h = np.minimum(bb_h, flat_anchors[:, 1])
-        intersection = inter_w * inter_h
-        
-        union = bb_area + anchors_areas - intersection
-        iou = np.divide(intersection, union, where=union!=0)
-        
-        return iou.reshape(3, 3)
-        
-    except Exception as e:
-        print(f"Erro em yolo_iou: {e}")
-        return np.zeros((3, 3), dtype=np.float32)
+    anchors = anchors_tf[1]
+
+    ious = yolo_iou(bb, anchors)
+    best_anchor_idx = np.argmax(ious)
+    print("IoUs calculadas:", ious.numpy())
+    print("Melhor âncora index:", best_anchor_idx)
+
+    print("Melhor âncora:", anchors[best_anchor_idx][0].numpy(), anchors[best_anchor_idx][1].numpy())
+
+if __name__ == "__main__":
+    bboxes = [[0, 0.40865384615384615, 0.41225961538461536, 0.125, 0.5036057692307693],
+          [0, 0.10817307692307693, 0.390625, 0.1502403846153846, 0.24158653846153846],
+          [0, 0.38461538461538464, 0.4795673076923077, 0.14182692307692307, 0.24158653846153846]
+        ]
+    print("Bounding Box:", bboxes[1][3:])
+    test_yolo_iou(bboxes[1][3:])

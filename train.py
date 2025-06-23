@@ -5,7 +5,7 @@ import tensorflow_model_optimization as tfmot
 from config import *
 from Dataset import YOLODatasetTF
 from Loss import yolo_tiny_loss
-from YOLOv3_tiny import yolov3_tiny
+from yolov3_tiny import yolov3_tiny
 from tensorflow.keras.optimizers import Adam, schedules
 from tqdm import tqdm
 
@@ -24,12 +24,12 @@ def configure_gpu():
             print(f"❌ Erro na GPU: {e}")
 
 def apply_qat_to_model(model):
-    """Aplica Quantization Aware Training ao modelo."""
-    quantize_annotate_layer = tfmot.quantization.keras.quantize_annotate_layer
-    annotated_model = tf.keras.Sequential([
-        quantize_annotate_layer(layer) for layer in model.layers
-    ])
-    return tfmot.quantization.keras.quantize_apply(annotated_model)
+    """Aplica Quantization Aware Training ao modelo funcional."""
+    annotated_model = tfmot.quantization.keras.quantize_annotate_model(model)
+    quant_aware_model = tfmot.quantization.keras.quantize_apply(annotated_model)
+    print("✅ QAT aplicado com sucesso ao modelo funcional.")
+    return quant_aware_model
+
 
 def create_optimizer():
     """Cria otimizador com decaimento exponencial."""
@@ -54,7 +54,7 @@ def load_or_create_model():
         print(f"↩️ Retomando treino da época {initial_epoch}")
     else:
         print("🆕 Criando novo modelo YOLOv3-Tiny")
-        model = yolov3_tiny(INPUT_SHAPE, 1)
+        model = yolov3_tiny()
         initial_epoch = 0
     return model, initial_epoch
 
@@ -63,23 +63,36 @@ def train_step_compiled(model, optimizer, images, targets):
     return train_step(model, optimizer, images, targets)
 
 def train_step(model, optimizer, images, targets):
-    """Executa um passo de treinamento."""
+    """Executa um passo de treinamento para ambas as escalas."""
     with tf.GradientTape() as tape:
-        pred = model(images, training=True)
-        loss = yolo_tiny_loss(pred, targets)
+        pred_small, pred_medium = model(images, training=True)
+        target_small, target_medium = targets
+
+        loss_small = yolo_tiny_loss(pred_small, target_small, S=GRID_SIZES[0])
+        loss_medium = yolo_tiny_loss(pred_medium, target_medium, S=GRID_SIZES[1])
+
+        loss = loss_small + loss_medium
+
     gradients = tape.gradient(loss, model.trainable_variables)
     optimizer.apply_gradients(zip(gradients, model.trainable_variables))
     return loss
+
 
 def evaluate_model(model, dataset):
     """Avalia o modelo no conjunto de validação."""
     val_loss = 0.0
     val_steps = 0
     for images_val, targets_val in dataset:
-        pred = model(images_val, training=False)
-        val_loss += yolo_tiny_loss(pred, targets_val)
+        pred_small, pred_medium = model(images_val, training=False)
+        target_small, target_medium = targets_val
+
+        loss_small = yolo_tiny_loss(pred_small, target_small, S=GRID_SIZES[0])
+        loss_medium = yolo_tiny_loss(pred_medium, target_medium, S=GRID_SIZES[1])
+
+        val_loss += (loss_small + loss_medium)
         val_steps += 1
     return val_loss / max(val_steps, 1)
+
 
 def save_model(model, epoch, train_loss, val_loss):
     """Salva o modelo com métricas."""
@@ -150,7 +163,7 @@ def main():
               f"Tempo: {epoch_time:.2f}s")
 
         # Salva o modelo periodicamente
-        if (epoch + 1) % SAVE_INTERVAL == 0 or (epoch + 1) == EPOCHS:
+        if (epoch + 1) % SAVE_FREQ == 0 or (epoch + 1) == EPOCHS:
             model_path = save_model(model, epoch+1, avg_train_loss, avg_val_loss)
             print(f"💾 Modelo salvo em: {model_path}")
 
