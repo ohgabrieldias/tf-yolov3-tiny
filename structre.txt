@@ -1,0 +1,7 @@
+flipping_bird_dataset/
+├── test/
+│   ├── (contém .jpg)
+│   ├── (contém .txt com anotações no formato YOLO)
+│   └── _darknet.labels (lista de classes)
+├── train/ (mesma estrutura que test/)
+└── valid/ (mesma estrutura que test/)
