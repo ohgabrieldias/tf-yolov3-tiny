@@ -5,3 +5,4 @@ Pillow
 opencv-python
 matplotlib
 pyqt5
+keras_cv

@@ -6,27 +6,49 @@ import tensorflow as tf
 import cv2
 import matplotlib.pyplot as plt
 
+# Na sua classe YOLODatasetTF (adaptada)
 class YOLODatasetTF(tf.data.Dataset):
-    def __new__(cls, root_dir, subset="train", image_size=416):
-        subset_dir = os.path.join(root_dir, subset)
-        img_paths = sorted(tf.io.gfile.glob(os.path.join(subset_dir, "*.jpg")))
-        label_paths = sorted(tf.io.gfile.glob(os.path.join(subset_dir, "*.txt")))
+    def __new__(cls, root_dir, subset="train", image_size=416, config=None):
+        if config is None:
+            raise ValueError("Configuração do dataset não fornecida")
+        
+        if config["USE_CSV"]:
+            # Modo PASCAL_VOC
+            csv_file = config["TRAIN_CSV"] if subset == "train" else config["VAL_CSV"]
+            csv_path = os.path.join(root_dir, csv_file)
+            with open(csv_path, 'r') as f:
+                lines = f.readlines()
+            pairs = [line.strip().split(',') for line in lines]
+            img_paths = [os.path.join(root_dir, config["IMG_DIR"], pair[0]) for pair in pairs]
+            label_paths = [os.path.join(root_dir, config["LABEL_DIR"], pair[1]) for pair in pairs]
+        else:
+            # Modo FLIPPING
+            subset_dir = os.path.join(root_dir, config["TRAIN_DIR"] if subset == "train" else config["VAL_DIR"])
+            img_paths = sorted(tf.io.gfile.glob(os.path.join(subset_dir, "*.jpg")))
+            label_paths = sorted(tf.io.gfile.glob(os.path.join(subset_dir, "*.txt")))
+            
+            # Verificação de correspondência
+            img_paths_filtered = []
+            label_paths_filtered = []
+            for img_path in img_paths:
+                base_name = os.path.splitext(os.path.basename(img_path))[0]
+                label_path = os.path.join(subset_dir, f"{base_name}.txt")
+                if label_path in label_paths:
+                    img_paths_filtered.append(img_path)
+                    label_paths_filtered.append(label_path)
+            
+            img_paths = img_paths_filtered
+            label_paths = label_paths_filtered
 
         def parse_example(img_path, label_path):
-            # Debug: mostrar paths
-            #tf.print("[DEBUG] Processando imagem:", img_path)
-            #tf.print("[DEBUG] Label correspondente:", label_path)
-            
+            # (Implementação existente do parse_example)
             image = tf.py_function(cls._load_image, [img_path], tf.float32)
             bboxes = tf.py_function(cls._load_bboxes, [label_path], tf.float32)
-
+            
             image.set_shape([image_size, image_size, 3])
             bboxes.set_shape([None, 5])
-
-            # Debug: mostrar shapes intermediários
-            ##tf.print("[DEBUG] Shape da imagem:", tf.shape(image))
-            ##tf.print("[DEBUG] Número de bboxes:", tf.shape(bboxes)[0])
-
+            
+            # (Restante da sua implementação existente)
             target_small = tf.py_function(
                 func=cls._generate_target,
                 inp=[bboxes, anchors_tf[0], 13, 32],
@@ -103,8 +125,10 @@ class YOLODatasetTF(tf.data.Dataset):
             tx = (cx / stride) - grid_x
             ty = (cy / stride) - grid_y
 
-            tw = np.log(w / anchors[best_anchor_idx][0] + 1e-6)
-            th = np.log(h / anchors[best_anchor_idx][1] + 1e-6)
+            # tw = np.log(w / anchors[best_anchor_idx][0] + 1e-6)
+            # th = np.log(h / anchors[best_anchor_idx][1] + 1e-6)
+            tw = w * grid_size
+            th = h * grid_size
 
             targets[grid_y, grid_x, best_anchor_idx, 0] = 1.0
             targets[grid_y, grid_x, best_anchor_idx, 1:5] = [tx, ty, tw, th]
@@ -112,13 +136,13 @@ class YOLODatasetTF(tf.data.Dataset):
             t = tf.convert_to_tensor(targets[grid_y, grid_x, best_anchor_idx])
             t_rounded = tf.round(t * 1e4) / 1e4  # arredonda para 4 casas decimais
 
-            #tf.print("[DEBUG] S =", grid_size,
-                    # "| cell =", (grid_y, grid_x),
-                    # "| anchor_idx =", best_anchor_idx,
-                    # "| target =", t_rounded)
+            # tf.print("[DEBUG] S =", grid_size,
+            #         "| cell =", (grid_y, grid_x),
+            #         "| anchor_idx =", best_anchor_idx,
+            #         "| target =", t_rounded)
 
 
-        return targets
+        return targets # shape: (grid_size, grid_size, 3, 5 + NUM_CLASSES)
 
 def plot_image_with_grid_cells(image, target, grid_size, anchors, stride):
     """
@@ -226,38 +250,38 @@ if __name__ == "__main__":
     device = configure_device()
     
     # Habilitar execução eager para ver os prints
-    tf.config.run_functions_eagerly(False)
+    tf.data.experimental.enable_debug_mode()
     
     try:
-        dataset = YOLODatasetTF(DATASET_PATH, subset="train") \
+        dataset = YOLODatasetTF(DATASET_PATH, subset="tmp") \
             .batch(BATCH_SIZE).prefetch(tf.data.AUTOTUNE).shuffle(100)
 
 
-        # Pega apenas o primeiro batch
-        for image_batch, (target_small_batch, target_medium_batch) in dataset.take(1):
-            # Converte os tensores para numpy
-            img_np           = image_batch.numpy()          # shape: (4, H, W, 3)
-            target_small_np  = target_small_batch.numpy()   # shape: (4, 13, 13, 3, 5+num_classes)
-            target_medium_np = target_medium_batch.numpy()  # se quiser usar a outra escala
+        # # Pega apenas o primeiro batch
+        # for image_batch, (target_small_batch, target_medium_batch) in dataset.take(1):
+        #     # Converte os tensores para numpy
+        #     img_np           = image_batch.numpy()          # shape: (4, H, W, 3)
+        #     target_small_np  = target_small_batch.numpy()   # shape: (4, 13, 13, 3, 5+num_classes)
+        #     target_medium_np = target_medium_batch.numpy()  # se quiser usar a outra escala
 
-            # Loop por cada imagem do batch
-            for i in range(img_np.shape[0]):
-                image_single  = img_np[i]          # (H, W, 3)
+        #     # Loop por cada imagem do batch
+        #     for i in range(img_np.shape[0]):
+        #         image_single  = img_np[i]          # (H, W, 3)
 
-                plot_image_with_grid_cells(
-                    image=image_single,
-                    target=target_small_np[i],
-                    grid_size=13,
-                    anchors=anchors_tf[0],  # lista de 3 tuplas (w, h)
-                    stride=32
-                )
+        #         plot_image_with_grid_cells(
+        #             image=image_single,
+        #             target=target_small_np[i],
+        #             grid_size=13,
+        #             anchors=anchors_tf[0],  # lista de 3 tuplas (w, h)
+        #             stride=32
+        #         )
 
-                plot_image_with_grid_cells(
-                    image=image_single,
-                    target=target_medium_np[i],
-                    grid_size=26,
-                    anchors=anchors_tf[1],  # lista de 3 tuplas (w, h)
-                    stride=16
-                )
+        #         plot_image_with_grid_cells(
+        #             image=image_single,
+        #             target=target_medium_np[i],
+        #             grid_size=26,
+        #             anchors=anchors_tf[1],  # lista de 3 tuplas (w, h)
+        #             stride=16
+        #         )
     except Exception as e:
         print(f"Erro durante execução: {e}")

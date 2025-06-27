@@ -1,5 +1,6 @@
 import tensorflow as tf
 from tensorflow.keras import layers, Model
+from config import NUM_CLASSES
 
 def conv_block(x, filters, kernel_size, strides=1):
     x = layers.Conv2D(filters, kernel_size, strides=strides, padding='same',
@@ -8,7 +9,7 @@ def conv_block(x, filters, kernel_size, strides=1):
     x = layers.LeakyReLU(alpha=0.1)(x)
     return x
 
-def yolov3_tiny(input_shape=(416, 416, 3), num_classes=1):
+def yolov3_tiny(input_shape=(416, 416, 3), num_classes=NUM_CLASSES):
     inputs = layers.Input(shape=input_shape)
 
     x = conv_block(inputs, 16, 3)
@@ -36,7 +37,7 @@ def yolov3_tiny(input_shape=(416, 416, 3), num_classes=1):
 
     # Detecção na escala 13x13
     x1 = conv_block(x, 512, 3)
-    pred_small = layers.Conv2D(3 * (5 + num_classes), 1, padding='same')(x1)
+    pred_small = layers.Conv2D(3 * (5 + num_classes), 1, padding='same')(x1) # shape (batch_size, 13, 13, 18)
 
     # Detecção na escala 26x26
     x = conv_block(x, 128, 1)
