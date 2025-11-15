@@ -15,9 +15,9 @@ def configure_gpu():
         try:
             for gpu in gpus:
                 tf.config.experimental.set_memory_growth(gpu, True)
-            policy = tf.keras.mixed_precision.Policy('mixed_float16')
+            policy = tf.keras.mixed_precision.Policy('float32')
             tf.keras.mixed_precision.set_global_policy(policy)
-            print("✅ GPU configurada com mixed-precision (FP16).")
+            print("✅ GPU configurada com mixed-precision (FP32).")
         except RuntimeError as e:
             print(f"❌ Erro na GPU: {e}")
 
@@ -137,7 +137,7 @@ def main():
         YOLODatasetTF(DATASET_PATH, subset='train', config=CURRENT_CONFIG)
         .batch(BATCH_SIZE)
         .prefetch(tf.data.AUTOTUNE)
-        .shuffle(1000)
+        .shuffle(100)
     )
 
     val_dataset = (
