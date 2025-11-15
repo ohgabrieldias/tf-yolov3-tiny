@@ -105,14 +105,14 @@ def show_image(img, window_name="Image", wait_time=0):
     cv2.waitKey(1)  # Limpeza extra
     return key
 
-MODEL_NAME = "saved_models/yv3tiny_e110_tl0.2_vl1.9.keras"
+MODEL_NAME = "/home/dias/labs/tf-yolov3-tiny/FLIPPING/yv3tiny_e110_tl0.2_vl1.9.keras"
 model = tf.keras.models.load_model(MODEL_NAME, compile=False)
 
 # Print the model summary to verify its structure
-model.summary()
+# model.summary()
 
-img_name = "000010"
-img_path = f"{DATASET_PATH}/test/{img_name}.jpg"
+img_name = "000006"
+img_path = f"{DATASET_PATH}/train/{img_name}.jpg"
 img_input, original_shape, original_img = preprocess_image(img_path)
 
 # 3. Make inference

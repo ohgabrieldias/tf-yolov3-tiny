@@ -1,6 +1,8 @@
 import cv2
 import numpy as np
 import tensorflow as tf
+import matplotlib
+matplotlib.use('Agg')  # evita o uso de Qt
 import matplotlib.pyplot as plt
 from config import *
 
@@ -10,12 +12,12 @@ def sigmoid(x):
     return 1 / (1 + np.exp(-x))
 
 def preprocess_image(img_path):
-    img = cv2.imread(img_path)
-    img_rgb = cv2.cvtColor(img, cv2.COLOR_BGR2RGB)
+    img = cv2.imread(img_path)  # BGR
+    img_rgb = cv2.cvtColor(img, cv2.COLOR_BGR2RGB)  # RGB para uso com matplotlib
     img_resized = cv2.resize(img_rgb, (IMAGE_SIZE, IMAGE_SIZE))
     img_input = img_resized / 255.0
     img_input = np.expand_dims(img_input.astype(np.float32), axis=0)
-    return img_input, img_resized
+    return img_input, img_resized  # retorna RGB
 
 def decode_output(pred, anchors, scale):
     batch_size, grid_size, _, _, _ = pred.shape
@@ -44,18 +46,6 @@ def decode_output(pred, anchors, scale):
                 boxes.append([x1, y1, x2, y2, objectness, 0])  # 0: class id
     return boxes
 
-def nms(boxes, iou_thresh=0.4):
-    if not boxes:
-        return []
-    boxes = sorted(boxes, key=lambda x: x[4], reverse=True)
-    final_boxes = []
-
-    while boxes:
-        chosen = boxes.pop(0)
-        final_boxes.append(chosen)
-        boxes = [box for box in boxes if iou(chosen, box) < iou_thresh]
-    return final_boxes
-
 def iou(box1, box2):
     xa1, ya1, xa2, ya2 = box1[:4]
     xb1, yb1, xb2, yb2 = box2[:4]
@@ -71,6 +61,18 @@ def iou(box1, box2):
     union_area = area_a + area_b - inter_area
 
     return inter_area / union_area if union_area > 0 else 0
+
+def nms(boxes, iou_thresh=0.4):
+    if not boxes:
+        return []
+    boxes = sorted(boxes, key=lambda x: x[4], reverse=True)
+    final_boxes = []
+
+    while boxes:
+        chosen = boxes.pop(0)
+        final_boxes.append(chosen)
+        boxes = [box for box in boxes if iou(chosen, box) < iou_thresh]
+    return final_boxes
 
 def draw_boxes(image, boxes):
     for x1, y1, x2, y2, score, cls in boxes:
@@ -92,16 +94,17 @@ input_details = interpreter.get_input_details()
 output_details = interpreter.get_output_details()
 
 # ========== Inference ==========
-img_name = "000001"
+img_name = "000006"
 img_path = f"{DATASET_PATH}/train/{img_name}.jpg"
 
-image_input, image_draw = preprocess_image(img_path)
+image_input, image_rgb = preprocess_image(img_path)
+image_draw = cv2.cvtColor(image_rgb, cv2.COLOR_RGB2BGR)  # ← CORREÇÃO: volta pra BGR para desenhar com OpenCV
 
 interpreter.set_tensor(input_details[0]['index'], image_input)
 interpreter.invoke()
 
 output_13 = interpreter.get_tensor(output_details[0]['index'])  # (1, 13, 13, 18)
-output_26 = interpreter.get_tensor(output_details[1]['index'])  # (1, 13, 13, 18)
+output_26 = interpreter.get_tensor(output_details[1]['index'])  # (1, 26, 26, 18)
 
 output_13 = reshape_output(output_13, 13)
 output_26 = reshape_output(output_26, 26)
@@ -114,7 +117,9 @@ final_boxes = nms(all_boxes, NMS_THRESHOLD)
 
 # ========== Visualização ==========
 image_with_boxes = draw_boxes(image_draw, final_boxes)
-plt.imshow(cv2.cvtColor(image_with_boxes, cv2.COLOR_BGR2RGB))
-plt.axis('off')
-plt.title("Resultado")
-plt.show()
+
+# Salvar resultado com OpenCV (cores corretas)
+cv2.imwrite("resultado.jpg", image_with_boxes)
+
+# Salvar também com Matplotlib (convertendo BGR → RGB)
+plt.imsave("output.png", cv2.cvtColor(image_with_boxes, cv2.COLOR_BGR2RGB))

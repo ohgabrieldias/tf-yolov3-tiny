@@ -33,7 +33,7 @@ INPUT_SHAPE = (416, 416, 3)
 #  PARÂMETROS DE TREINAMENTO  #
 # ============================ #
 # Quantization control
-USE_QAT = False  # Set to False to disable quantization
+USE_QAT = True  # Set to False to disable quantization
 EPOCHS = 110
 QAT_EPOCHS = 20
 SAVE_FREQ = 15
@@ -41,8 +41,8 @@ BATCH_SIZE = 32
 LEARNING_RATE = 1e-4                # Taxa de aprendizado inicial
 DECAY_STEPS = 1000                  # Decaimento a cada 1000 passos
 DECAY_RATE = 0.95                   # Fator de redução da taxa
-CONF_THRESHOLD = 0.8
-NMS_THRESHOLD = 0.05
+CONF_THRESHOLD = 0.75
+NMS_THRESHOLD = 0.005
 
 LAMBDA_COORD = 5.0
 LAMBDA_NOOBJ = 0.5
@@ -76,7 +76,7 @@ s_repeated = tf.tile(s_reshaped, [1, 3, 2])
 # Escalar as âncoras
 scaled_anchors_tf = anchors_tf * s_repeated
 
-DATASET = "FLIPPING"
+DATASET = "PASCAL_VOC"
 DATASET_PATH = f"{DATASET}"
 
 # Configurações específicas para cada dataset
